@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tbook version="2.0" e="2" complete="true">
+  <contact vip="false" fav="true" blocked="false">
+    <title>Engineer</title>
+    <first_name>Sven</first_name>
+    <last_name>Larsen</last_name>
+    <organization>Nordic Tech</organization>
+    <email>sven@example.com</email>
+    <note>Contact for technical support</note>
+    <group>work</group>
+    <numbers>
+      <number no="555-0100" type="business" outgoing_id="0"/>
+      <number no="555-0101" type="mobile" outgoing_id="0"/>
+    </numbers>
+  </contact>
+  <contact vip="true" fav="false" blocked="false">
+    <title>Consultant</title>
+    <first_name>Isabella</first_name>
+    <last_name>García</last_name>
+    <organization>Madrid Consulting</organization>
+    <email>isabella@example.com</email>
+    <note>Quarterly audit lead</note>
+    <group>colleague</group>
+    <numbers>
+      <number no="555-0200" type="fixed" outgoing_id="0"/>
+      <number no="555" type="extension" outgoing_id="0"/>
+    </numbers>
+  </contact>
+  <contact vip="false" fav="false" blocked="true">
+    <first_name>Hans</first_name>
+    <last_name>Müller</last_name>
+    <organization>Sales Express</organization>
+    <email>hans@example.com</email>
+    <note>Known solicitor</note>
+    <numbers>
+      <number no="555-9999" type="business" outgoing_id="0"/>
+    </numbers>
+  </contact>
+</tbook>

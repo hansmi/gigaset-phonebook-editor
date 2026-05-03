@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<!--
+Copyright (c) 2026 Michael Hanselmann. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<title>Gigaset XML phonebook editor</title>
+
+<style>
+html {
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+}
+
+.tbook-settings,
+contact-entry {
+  display: block;
+  border: 1px solid #999;
+  padding: .5em;
+  margin: 1em 0;
+}
+
+#contact-list {
+  min-height: 1em;
+}
+
+.row {
+  display: flex;
+  align-content: stretch;
+  gap: .5em 1em;
+
+  margin-top: .5em;
+}
+
+.row:first-child {
+  margin-top: 0;
+}
+
+.row-fields {
+  flex: 1;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: .5em 1em;
+}
+
+.row-fields label {
+  flex: 1 1 15em;
+}
+
+.row-fields label.small {
+  flex-basis: 5em;
+}
+
+.row-fields label.large {
+  flex-basis: 100%;
+}
+
+.row.flags .row-fields {
+  display: inline-block;
+}
+
+.row label span {
+  display: block;
+  font-size: 80%;
+}
+
+.row input:is([type="text"], [type="tel"]) {
+  display: block;
+  width: 100%;
+}
+
+.numbers-actions,
+.number-list,
+.number-item {
+  margin-top: .5em;
+}
+
+</style>
+
+</head>
+<body>
+
+<h1>Editor for Gigaset XML phonebook version 2 format ("tbook")</h1>
+
+<p>
+  An interactive editor for phonebook version 2 files used by Gigaset IP PRO
+  phones
+  (<a href="https://teamwork.gigaset.com/gigawiki/display/GPPPO/Local+Phonebook+-+XML+version+2+format">specification</a>).
+</p>
+
+<section class="tbook-settings">
+  <div class="grid">
+    <div class="row">
+      <label><input type="checkbox" id="tb-complete"> Replace all existing entries on import</label>
+    </div>
+
+    <div class="row">
+      <button onclick="document.getElementById('file-input').click()">Import XML</button>
+      <button onclick="exportToXML()">Export XML</button>
+      <input type="file" id="file-input" accept=".xml" onchange="importFromXML(event)" style="display: none;">
+    </div>
+  </div>
+</section>
+
+<button onclick="addContact()">Add contact</button>
+<div id="contact-list"></div>
+<button onclick="addContact()">Add contact</button>
+
+<template id="contact-template">
+  <div class="contact-item">
+    <div class="grid">
+      <div class="row">
+        <div class="row-fields">
+          <label><span>First name</span><input type="text" class="first_name"></label>
+          <label><span>Last name</span><input type="text" class="last_name"></label>
+        </div>
+        <div class="row-actions">
+          <button class="remove-contact" type="button">&#x1F5D1;</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row-fields">
+          <label><span>Organization</span><input type="text" class="organization"></label>
+          <label><span>E-mail</span><input type="text" class="email"></label>
+          <label class="small"><span>Title</span><input type="text" class="title"></label>
+          <label class="small"><span>Group</span><select class="group">
+            <option value=""></option>
+            <option value="work">Work</option>
+            <option value="colleague">Colleague</option>
+            <option value="family">Family</option>
+            <option value="friend">Friend</option>
+          </select></label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row-fields">
+          <label class="large"><span>Note</span><input type="text" class="note"></label>
+        </div>
+      </div>
+      <div class="row flags">
+        <div class="row-fields">
+          <label><input type="checkbox" class="vip"> VIP</label>
+          <label><input type="checkbox" class="fav"> Favorite</label>
+          <label><input type="checkbox" class="blocked"> Blocked</label>
+        </div>
+      </div>
+    </div>
+    <div class="numbers-section">
+      <div class="numbers-actions">
+        <button class="add-num" type="button">Add number</button>
+      </div>
+      <div class="number-list"></div>
+    </div>
+  </div>
+</template>
+
+<template id="number-row-template">
+  <div class="number-item">
+    <input type="tel" class="num-val" placeholder="Number">
+    <select class="num-type">
+      <option value="fixed">Fixed</option>
+      <option value="business">Business</option>
+      <option value="mobile">Mobile</option>
+      <option value="home">Home</option>
+      <option value="extension">Extension</option>
+      <option value="sip">SIP</option>
+    </select>
+    <button class="remove-num" type="button">&#x1F5D1;</button>
+  </div>
+</template>
+
+<script>
+function instantiateTemplate(id, selector) {
+  const template = document.getElementById(id);
+  const clone = template.content.cloneNode(true);
+
+  return clone.querySelector(selector);
+}
+
+class ContactEntry extends HTMLElement {
+  constructor() {
+    super();
+    this.refs = null;
+    this.pendingValues = null;
+  }
+
+  connectedCallback() {
+    // Prevent re-rendering if already initialized.
+    if (this.hasChildNodes()) return;
+
+    const item = instantiateTemplate('contact-template', '.contact-item');
+
+    this.refs = {
+      title: item.querySelector('.title'),
+      first_name: item.querySelector('.first_name'),
+      last_name: item.querySelector('.last_name'),
+      organization: item.querySelector('.organization'),
+      email: item.querySelector('.email'),
+      note: item.querySelector('.note'),
+      group: item.querySelector('.group'),
+
+      // Flags
+      vip: item.querySelector('.vip'),
+      fav: item.querySelector('.fav'),
+      blocked: item.querySelector('.blocked'),
+
+      numList: item.querySelector('.number-list')
+    };
+
+    item.querySelector('.remove-contact').onclick = () => this.remove();
+    item.querySelector('.add-num').onclick = () => this.addNumber();
+
+    this.appendChild(item);
+
+    if (this.pendingValues) {
+      this.setValues(this.pendingValues);
+      this.pendingValues = null;
+    }
+  }
+
+  addNumber(no = '', type = '') {
+    const row = instantiateTemplate('number-row-template', '.number-item');
+
+    row.querySelector('.num-val').value = no;
+    row.querySelector('.num-type').value = type;
+    row.querySelector('.remove-num').onclick = () => row.remove();
+
+    this.refs.numList.appendChild(row);
+  }
+
+  setValues(data) {
+    if (!data) {
+      data = {};
+    }
+
+    if (!this.refs) {
+      this.pendingValues = data;
+      return;
+    }
+
+    this.refs.title.value = data.title || '';
+    this.refs.first_name.value = data.first_name || '';
+    this.refs.last_name.value = data.last_name || '';
+    this.refs.organization.value = data.organization || '';
+    this.refs.email.value = data.email || '';
+    this.refs.note.value = data.note || '';
+
+    this.refs.group.value = data.group || '';
+    if (data.selectedIndex < 0) {
+      this.refs.group.selectedIndex = 0;
+    }
+
+    this.refs.vip.checked = data.vip === "true";
+    this.refs.fav.checked = data.fav === "true";
+    this.refs.blocked.checked = data.blocked === "true";
+
+    this.refs.numList.replaceChildren();
+
+    if (data.numbers && data.numbers.length > 0) {
+      data.numbers.forEach(n => this.addNumber(n.no, n.type));
+    } else {
+      this.addNumber();
+    }
+  }
+
+  export(doc) {
+    const contact = doc.createElement("contact");
+
+    for (let [attrib, value] of Object.entries({
+      vip: this.refs.vip.checked,
+      fav: this.refs.fav.checked,
+      blocked: this.refs.blocked.checked,
+    })) {
+      contact.setAttribute(attrib, value);
+    }
+
+    let empty = true;
+
+    for (let [tag, input] of Object.entries({
+      title: this.refs.title,
+      first_name: this.refs.first_name,
+      last_name: this.refs.last_name,
+      organization: this.refs.organization,
+      email: this.refs.email,
+      note: this.refs.note,
+      group: this.refs.group,
+    })) {
+      const value = input.value.trim();
+
+      if (value) {
+        const node = doc.createElement(tag);
+        node.textContent = value;
+        contact.appendChild(node);
+        empty = false;
+      }
+    }
+
+    const numRows = this.refs.numList.querySelectorAll('.number-item');
+    if (numRows.length > 0) {
+      let wrapper = null;
+
+      numRows.forEach(row => {
+        const value = row.querySelector('.num-val').value.trim();
+        if (value) {
+          const nNode = doc.createElement("number");
+
+          nNode.setAttribute("no", value);
+          nNode.setAttribute("type", row.querySelector('.num-type').value);
+          nNode.setAttribute("outgoing_id", "0");
+
+          if (!wrapper) {
+            wrapper = doc.createElement("numbers");
+            contact.appendChild(wrapper);
+          }
+
+          wrapper.appendChild(nNode);
+        }
+      });
+    }
+
+    return empty ? null : contact;
+  }
+};
+
+customElements.define('contact-entry', ContactEntry);
+
+function addContact(data = null) {
+  const entry = document.createElement('contact-entry');
+  entry.setValues(data);
+  document.getElementById('contact-list').appendChild(entry);
+}
+
+function importFromXML(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(e.target.result, "text/xml");
+    const tbook = xmlDoc.querySelector("tbook");
+
+    if (!tbook) {
+      alert("Invalid XML format. Could not find <tbook> root node.");
+      return;
+    }
+
+    document.getElementById('tb-complete').checked = tbook.getAttribute("complete") === "true";
+
+    document.getElementById('contact-list').replaceChildren();
+
+    tbook.querySelectorAll("contact").forEach(c => {
+      const data = {
+        title: c.querySelector("title")?.textContent,
+        first_name: c.querySelector("first_name")?.textContent,
+        last_name: c.querySelector("last_name")?.textContent,
+        organization: c.querySelector("organization")?.textContent,
+        email: c.querySelector("email")?.textContent,
+        note: c.querySelector("note")?.textContent,
+        group: c.querySelector("group")?.textContent,
+
+        vip: c.getAttribute("vip"),
+        fav: c.getAttribute("fav"),
+        blocked: c.getAttribute("blocked"),
+
+        numbers: Array.from(c.querySelectorAll("number")).map(n => ({
+          no: n.getAttribute("no"),
+          type: n.getAttribute("type"),
+        }))
+      };
+
+      addContact(data);
+    });
+  };
+  reader.readAsText(file);
+
+  // Reset file input so the same file can be loaded again if needed
+  event.target.value = '';
+}
+
+function exportToXML() {
+  const doc = document.implementation.createDocument(null, "tbook");
+  const tbook = doc.documentElement;
+
+  tbook.setAttribute("version", "2.0");
+  tbook.setAttribute("e", "2");
+  tbook.setAttribute("complete", document.getElementById('tb-complete').checked);
+
+  document.querySelectorAll('contact-entry').forEach(el => {
+    const contact = el.export(doc);
+
+    if (contact) {
+      tbook.appendChild(contact);
+    }
+  });
+
+  const serializer = new XMLSerializer();
+  const xmlStr = `<?xml version="1.0" encoding="UTF-8"?>\n${serializer.serializeToString(doc)}`;
+
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([xmlStr], {type: 'text/xml'}));
+  link.download = `directory${Date.now()}.xml`;
+  link.click();
+}
+
+window.onload = () => addContact();
+</script>
+</body>
+</html>
+
+<!-- vim: set sw=2 sts=2 et : -->

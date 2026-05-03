@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<!--
+Copyright (c) 2026 Michael Hanselmann. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<title>Gigaset XML phonebook editor</title>
+
+<style>
+html {
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+}
+
+table {
+  border-collapse: collapse;
+  margin: .5em 0;
+  width: 100%;
+}
+
+table thead {
+  position: sticky;
+  top: 0;
+  background-color: lightgrey;
+}
+
+table tr {
+  border-bottom: 1px solid #999;
+}
+
+table th,
+table td {
+  text-align: left;
+  vertical-align: top;
+  padding: .2em .1em;
+}
+
+table td > div {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: .1em;
+}
+
+table td input {
+  display: inline-block;
+}
+
+table input {
+  width: 10em;
+}
+
+table input.name,
+table input.surname {
+  width: 12em;
+}
+
+table td > div input {
+  flex: 1;
+}
+
+table tbody tr:hover,
+table tbody tr:has(:focus) {
+  background: lemonchiffon;
+}
+</style>
+
+</head>
+<body>
+
+<h1>Editor for Gigaset phonebook ("LocalDirectory")</h1>
+
+<p>
+  An interactive editor for phonebook files used by Gigaset N530, N610, N670,
+  N770, N870, N870E and BasicLine IP
+  (<a href="https://teamwork.gigaset.com/gigawiki/pages/viewpage.action?pageId=902955346">specification</a>).
+</p>
+
+<div>
+  <button onclick="document.getElementById('file-input').click()">Import</button>
+  <button onclick="exportToXML()">Export</button>
+  <input type="file" id="file-input" accept=".xml" onchange="importFromXML(event)" style="display: none;">
+</div>
+
+<table id="contact-list">
+  <thead>
+    <th>Name</th>
+    <th>Surname</th>
+    <th>Home</th>
+    <th>Office</th>
+    <th>Mobile</th>
+    <th></th>
+  </thead>
+  <tbody>
+  </tbody>
+</table>
+
+<template id="contact-item-template">
+  <tr class="number-item">
+    <td><div><input type="text" class="name"></div></td>
+    <td><div><input type="text" class="surname"></div></td>
+    <td><div>
+      <input type="tel" class="home1">
+      <input type="tel" class="home2">
+    </div></td>
+    <td><div>
+      <input type="tel" class="office1">
+      <input type="tel" class="office2">
+    </div></td>
+    <td><div>
+      <input type="tel" class="mobile1">
+      <input type="tel" class="mobile2">
+    </div></td>
+    <td>
+      <button class="remove-num" type="button">&#x1F5D1;</button>
+    </td>
+  </tr>
+</template>
+
+<script>
+function instantiateTemplate(id) {
+  const template = document.getElementById(id);
+
+  return template.content.cloneNode(true).firstElementChild;
+}
+
+function rowIsEmptyImpl() {
+  return Array.from(this.querySelectorAll("input")).every(
+    (el) => el.value.length === 0
+  );
+}
+
+function rowExportValuesImpl() {
+  const values = {};
+
+  this.querySelectorAll("input").forEach(el => {
+    const value = el.value.trim();
+
+    values[el.className] = value || "";
+  });
+
+  return values;
+}
+
+function addContact(data = null) {
+  const tbody = document.querySelector("#contact-list tbody");
+  const row = instantiateTemplate('contact-item-template');
+
+  if (data) {
+    row.querySelector(".name").value = data.name || "";
+    row.querySelector(".surname").value = data.surname || "";
+    row.querySelector(".home1").value = data.home1 || "";
+    row.querySelector(".home2").value = data.home2 || "";
+    row.querySelector(".office1").value = data.office1 || "";
+    row.querySelector(".office2").value = data.office2 || "";
+    row.querySelector(".mobile1").value = data.mobile1 || "";
+    row.querySelector(".mobile2").value = data.mobile2 || "";
+  }
+
+  row.isEmpty = rowIsEmptyImpl.bind(row);
+  row.exportValues = rowExportValuesImpl.bind(row);
+
+  row.querySelector(".remove-num").onclick = () => {
+    row.remove();
+    ensureEmptyRow();
+  };
+
+  tbody.appendChild(row);
+}
+
+function ensureEmptyRow() {
+  const tbody = document.querySelector("#contact-list tbody");
+  const allRows = tbody.querySelectorAll("tr");
+
+  if (allRows.length === 0) {
+    addContact();
+    return;
+  }
+
+  const row = tbody.lastElementChild;
+
+  if (row && !row.isEmpty()) {
+    addContact();
+  }
+}
+
+window.onload = () => {
+  const tbody = document.querySelector("#contact-list tbody");
+
+  tbody.addEventListener("input", ensureEmptyRow);
+
+  ensureEmptyRow();
+};
+
+function importFromXML(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(e.target.result, "text/xml");
+    const listRoot = xmlDoc.querySelector("list");
+
+    if (!listRoot) {
+      alert("Invalid XML format. Could not find <list> root node.");
+      return;
+    }
+
+    document.querySelector("#contact-list tbody").replaceChildren();
+
+    // Iterate through each <entry> in the XML[cite: 1, 2].
+    listRoot.querySelectorAll("entry").forEach(entry => {
+      addContact({
+        name: entry.getAttribute("name"),
+        surname: entry.getAttribute("surname"),
+        home1: entry.getAttribute("home1"),
+        home2: entry.getAttribute("home2"),
+        office1: entry.getAttribute("office1"),
+        office2: entry.getAttribute("office2"),
+        mobile1: entry.getAttribute("mobile1"),
+        mobile2: entry.getAttribute("mobile2")
+      });
+    });
+
+    ensureEmptyRow();
+  };
+
+  reader.readAsText(file);
+
+  // Reset file input so the same file can be loaded again if needed
+  event.target.value = '';
+}
+
+function exportToXML() {
+  const doc = document.implementation.createDocument(null, "list");
+  const listRoot = doc.documentElement;
+
+  const rows = document.querySelectorAll("#contact-list tbody tr");
+
+  rows.forEach(row => {
+    if (row.isEmpty()) {
+      return;
+    }
+
+    const entry = doc.createElement("entry");
+
+    for (const [key, value] of Object.entries(row.exportValues())) {
+      entry.setAttribute(key, value);
+    }
+
+    listRoot.appendChild(entry);
+  });
+
+  const serializer = new XMLSerializer();
+  const xmlStr =
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<!DOCTYPE LocalDirectory>\n' +
+    serializer.serializeToString(doc) + '\n';
+
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([xmlStr], {type: 'text/xml'}));
+  link.download = `directory${Date.now()}.xml`;
+  link.click();
+
+  URL.revokeObjectURL(link.href);
+}
+</script>
+
+</body>
+</html>
+
+<!-- vim: set sw=2 sts=2 et : -->
